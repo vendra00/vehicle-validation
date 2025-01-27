@@ -22,6 +22,7 @@ public class User {
 
     @Column(nullable = false)
     private String password;
+    private String resetToken;
 
     private String fullName;
 

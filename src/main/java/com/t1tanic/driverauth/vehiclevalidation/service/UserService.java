@@ -14,4 +14,7 @@ public interface UserService {
     List<User> getAllUsers();
     void deleteUser(Long id);
     boolean passwordMatches(String rawPassword, String encodedPassword);
+    void resetPassword(String email);
+    Optional<User> getUserByResetToken(String token);
+
 }

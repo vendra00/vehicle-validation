@@ -7,16 +7,19 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     @Override
@@ -68,5 +71,35 @@ public class UserServiceImpl implements UserService {
     public boolean passwordMatches(String rawPassword, String encodedPassword) {
         return passwordEncoder.matches(rawPassword, encodedPassword);
     }
+
+    @Override
+    public void resetPassword(String email) {
+        Optional<User> userOptional = userRepository.findByEmail(email);
+
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+            String token = UUID.randomUUID().toString();
+
+            // Store the token (you can use Redis, database, or in-memory cache)
+            user.setResetToken(token);
+            userRepository.save(user);
+
+            String resetLink = "http://TODO-your-frontend-app.com/reset-password?token=" + token;
+
+            emailService.sendEmail(email, "Password Reset Request",
+                    "<p>Click the link below to reset your password:</p>"
+                            + "<a href=\"" + resetLink + "\">Reset Password</a>");
+
+            System.out.println("Password reset email sent to: " + email);
+        } else {
+            throw new RuntimeException("Email not found");
+        }
+    }
+
+    @Override
+    public Optional<User> getUserByResetToken(String token) {
+        return userRepository.findByResetToken(token);
+    }
+
 
 }
