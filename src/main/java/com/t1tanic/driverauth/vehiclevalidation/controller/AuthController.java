@@ -1,7 +1,9 @@
 package com.t1tanic.driverauth.vehiclevalidation.controller;
 
 import com.t1tanic.driverauth.vehiclevalidation.model.AuthResponse;
+import com.t1tanic.driverauth.vehiclevalidation.model.ResetPasswordRequest;
 import com.t1tanic.driverauth.vehiclevalidation.model.User;
+import com.t1tanic.driverauth.vehiclevalidation.repository.UserRepository;
 import com.t1tanic.driverauth.vehiclevalidation.security.JwtUtil;
 import com.t1tanic.driverauth.vehiclevalidation.service.TokenBlacklistService;
 import com.t1tanic.driverauth.vehiclevalidation.service.UserService;
@@ -25,12 +27,14 @@ public class AuthController {
     private final UserService userService;
     private final TokenBlacklistService tokenBlacklistService;
     private final PasswordEncoder passwordEncoder;
+    private final UserRepository userRepository;
 
-    public AuthController(JwtUtil jwtUtil, UserService userService, TokenBlacklistService tokenBlacklistService, PasswordEncoder passwordEncoder) {
+    public AuthController(JwtUtil jwtUtil, UserService userService, TokenBlacklistService tokenBlacklistService, PasswordEncoder passwordEncoder, UserRepository userRepository) {
         this.jwtUtil = jwtUtil;
         this.userService = userService;
         this.tokenBlacklistService = tokenBlacklistService;
         this.passwordEncoder = passwordEncoder;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/login")
@@ -80,35 +84,36 @@ public class AuthController {
 
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> forgotPassword(@RequestParam String email) {
-        Optional<User> user = userService.getUserByEmail(email);
-        if (user.isPresent()) {
-            String resetToken = jwtUtil.generateToken(email);
-            // In real case, send email with token link (omitted for brevity)
-            logger.info("Password reset token generated for {}", email);
-            return ResponseEntity.ok(Map.of("message", "Password reset link sent", "token", resetToken));
-        } else {
-            return ResponseEntity.status(404).body(Map.of("message", "Email not found"));
-        }
+        userService.resetPassword(email);
+        return ResponseEntity.ok(Map.of("message", "Password reset email sent successfully"));
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Map<String, String>> resetPassword(@RequestParam String email, @RequestBody Map<String, String> request) {
-        Optional<User> userOptional = userService.getUserByEmail(email);
+    public ResponseEntity<String> handlePasswordReset(
+            @RequestParam(required = false) String token,
+            @RequestParam(required = false) String newPassword,
+            @RequestBody(required = false) ResetPasswordRequest request) {
 
-        if (userOptional.isPresent()) {
-            User user = userOptional.get();
-            String newPassword = request.get("newPassword");
+        String resetToken = token != null ? token : request != null ? request.getToken() : null;
+        String newPass = newPassword != null ? newPassword : request != null ? request.getPassword() : null;
 
-            // Update the password field only and save
-            user.setPassword(passwordEncoder.encode(newPassword));
-            userService.saveUser(user);
-
-            return ResponseEntity.ok(Map.of("message", "Password has been reset successfully"));
-        } else {
-            return ResponseEntity.status(404).body(Map.of("message", "User not found"));
+        if (resetToken == null || newPass == null) {
+            return ResponseEntity.badRequest().body("Invalid request. Token and new password are required.");
         }
-    }
 
+        Optional<User> userOptional = userRepository.findByResetToken(resetToken);
+
+        if (userOptional.isEmpty()) {
+            return ResponseEntity.badRequest().body("Invalid or expired token");
+        }
+
+        User user = userOptional.get();
+        user.setPassword(passwordEncoder.encode(newPass));
+        user.setResetToken(null); // Clear the token after reset
+        userRepository.save(user);
+
+        return ResponseEntity.ok("Password reset successfully. You can now log in with your new password.");
+    }
 
     @PostMapping("/logout")
     public ResponseEntity<Map<String, String>> logout(HttpServletRequest request) {
